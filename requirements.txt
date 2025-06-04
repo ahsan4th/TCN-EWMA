@@ -3,5 +3,14 @@ pandas
 numpy
 matplotlib
 scikit-learn
-tensorflow
+tensorflow # Hapus batasan versi untuk memungkinkan instalasi versi terbaru atau pre-release.
+           # PENTING: TensorFlow versi stabil saat ini tidak mendukung Python 3.13.3.
+           # Untuk mengatasi masalah ini, Anda memiliki dua opsi utama:
+           # 1. Sangat disarankan: Gunakan lingkungan Python versi 3.9, 3.10, atau 3.11.
+           #    Ini adalah cara paling andal untuk memastikan kompatibilitas TensorFlow.
+           # 2. Jika Anda harus tetap menggunakan Python 3.13.3:
+           #    Coba instal dengan mengizinkan pre-release (versi yang belum stabil)
+           #    dengan menjalankan perintah ini di terminal Anda:
+           #    `pip install --pre -r requirements.txt`
+           #    Namun, metode ini mungkin menyebabkan masalah stabilitas atau kinerja.
 openpyxl
