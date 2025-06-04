@@ -279,3 +279,28 @@ if uploaded_file is not None:
 else:
     st.info("Silakan unggah file Excel Anda untuk memulai.")
 ```
+**Ringkasan Perbaikan:**
+
+1.  **`create_sequences` Function**:
+    * Output `y` sekarang secara eksplisit di-reshape menjadi `(num_samples, 1)` (2D) di dalam fungsi itu sendiri. Ini memastikan bahwa `y_train` dan `y_test` selalu memiliki dimensi yang benar saat digunakan dengan `MinMaxScaler.inverse_transform`.
+
+2.  **`MinMaxScaler.inverse_transform` Calls**:
+    * Karena `y_train` dan `y_test` sudah 2D dari `create_sequences`, `.reshape(-1, 1)` yang sebelumnya ada pada pemanggilan `scaler.inverse_transform(y_train.reshape(-1, 1))` dan `scaler.inverse_transform(y_test.reshape(-1, 1))` telah dihapus.
+
+3.  **Plotting Prediksi (Training & Testing)**:
+    * Implementasi *plotting* prediksi sekarang lebih tangguh. `train_predict_plot` dan `test_predict_plot` dibuat sebagai *array* kosong berukuran penuh dengan nilai `NaN`. Prediksi kemudian disisipkan ke dalam *array* ini pada indeks waktu yang sesuai. Ini memastikan bahwa `matplotlib.pyplot.plot` selalu menerima *array* 1D yang bersih dan dapat menangani celah data dengan baik, mengurangi kemungkinan *error* dimensi.
+
+4.  **Penanganan Indeks `test_data`**:
+    * Menambahkan `max(0, train_size - look_back)` saat menentukan `test_start_index` untuk mencegah indeks negatif jika ukuran data *training* terlalu kecil dibandingkan dengan `look_back`.
+
+5.  **Penanganan Residual Kosong untuk EWMA**:
+    * Menambahkan pemeriksaan `if len(residuals) > 0:` sebelum memanggil `calculate_ewma` untuk mencegah *error* jika tidak ada data residual (misalnya, jika data *testing* terlalu singkat).
+    * Menyesuaikan inisialisasi `Z_t[0]` di `calculate_ewma` untuk menangani kasus `n=0`.
+
+6.  **Indeks `residuals_df`**:
+    * Memperbaiki indeks `residuals_df` agar sesuai dengan rentang waktu aktual dari data *testing* yang diprediksi (`df_volume.index[test_predict_start_idx:test_predict_end_idx]`).
+
+7.  **Pesan *Error* yang Lebih Jelas**:
+    * Memperbarui pesan *error* di blok `except` untuk memberikan panduan yang lebih spesifik mengenai *error* dimensi, termasuk saran tentang kompatibilitas versi Python-TensorFlow.
+
+Perbaikan ini harus mengatasi masalah dimensi *array* yang menyebabkan *error* yang Anda laporkan. Pastikan juga lingkungan Python Anda (disarankan Python 3.9, 3.10, atau 3.11) kompatibel dengan TensorFlow untuk menghindari masalah instala
