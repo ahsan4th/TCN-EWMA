@@ -121,11 +121,13 @@ if uploaded_file is not None:
         if 'Tanggal' in df.columns and 'Volume' in df.columns:
             df['Tanggal'] = pd.to_datetime(df['Tanggal'])
             df.set_index('Tanggal', inplace=True)
-            df_volume = df[['Volume']].copy() # Pastikan hanya kolom 'Volume' yang digunakan
-
+            # Ensure df_volume is a 2D numpy array for scaler
+            # Menggunakan .values.reshape(-1, 1) untuk memastikan array 2D yang eksplisit
+            df_volume_np = df[['Volume']].values.reshape(-1, 1)
+            
             st.subheader("Pratinjau Data")
-            st.write(df_volume.head())
-            st.write(f"Jumlah baris data: {len(df_volume)}")
+            st.write(df[['Tanggal', 'Volume']].head()) # Display original DataFrame head for clarity
+            st.write(f"Jumlah baris data: {len(df_volume_np)}")
 
             # Parameter TCN
             st.sidebar.subheader("Parameter TCN")
@@ -147,7 +149,8 @@ if uploaded_file is not None:
                 st.subheader("Memproses Data dan Melatih Model TCN...")
                 # Normalisasi data
                 scaler = MinMaxScaler(feature_range=(0, 1))
-                scaled_data = scaler.fit_transform(df_volume)
+                # Use df_volume_np which is already a 2D numpy array
+                scaled_data = scaler.fit_transform(df_volume_np)
 
                 # Split data training dan testing
                 train_size = int(len(scaled_data) * train_ratio)
@@ -157,8 +160,18 @@ if uploaded_file is not None:
                 train_data = scaled_data[0:train_size, :]
                 test_data = scaled_data[test_start_index:, :]
 
+                # Check if there's enough data to create sequences
+                if len(train_data) <= look_back or len(test_data) <= look_back:
+                    st.error("Data terlalu pendek untuk look-back yang dipilih. Harap sesuaikan look-back atau berikan lebih banyak data.")
+                    st.stop() # Stop execution if data is insufficient
+
                 X_train, y_train = create_sequences(train_data, look_back)
                 X_test, y_test = create_sequences(test_data, look_back)
+
+                # Check if sequences are empty
+                if X_train.shape[0] == 0 or X_test.shape[0] == 0:
+                    st.error("Tidak cukup data untuk membuat sequence training atau testing dengan look-back yang diberikan. Harap sesuaikan look-back atau berikan lebih banyak data.")
+                    st.stop()
 
                 # Reshape input untuk TCN (samples, timesteps, features)
                 X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
@@ -191,28 +204,28 @@ if uploaded_file is not None:
                 # Plot hasil forecasting
                 st.subheader("Hasil Forecasting TCN")
                 fig_forecast, ax_forecast = plt.subplots(figsize=(12, 6))
-                ax_forecast.plot(df_volume.index, df_volume['Volume'], label='Aktual', color='black')
+                ax_forecast.plot(df.index, df['Volume'], label='Aktual', color='black') # Use original df.index and df['Volume']
 
                 # Buat array kosong dengan NaN untuk plotting yang lebih bersih
                 # Ini memastikan plot prediksi muncul di indeks waktu yang benar
-                train_predict_plot = np.empty_like(df_volume['Volume'], dtype=float) * np.nan
+                train_predict_plot = np.empty_like(df['Volume'], dtype=float) * np.nan
                 # Sesuaikan indeks untuk prediksi training
                 train_predict_start_idx = look_back
                 train_predict_end_idx = look_back + len(train_predict)
-                if train_predict_end_idx <= len(df_volume):
+                if train_predict_end_idx <= len(df): # Use len(df) for original index length
                     train_predict_plot[train_predict_start_idx : train_predict_end_idx] = train_predict.flatten()
 
-                test_predict_plot = np.empty_like(df_volume['Volume'], dtype=float) * np.nan
+                test_predict_plot = np.empty_like(df['Volume'], dtype=float) * np.nan
                 # Sesuaikan indeks untuk prediksi testing
                 # Indeks aktual untuk y_test_actual dimulai dari train_size + look_back
                 test_predict_start_idx = train_size + look_back
                 test_predict_end_idx = train_size + look_back + len(test_predict)
-                if test_predict_end_idx <= len(df_volume):
+                if test_predict_end_idx <= len(df): # Use len(df) for original index length
                     test_predict_plot[test_predict_start_idx : test_predict_end_idx] = test_predict.flatten()
 
 
-                ax_forecast.plot(df_volume.index, train_predict_plot, label='Prediksi Training TCN', color='blue')
-                ax_forecast.plot(df_volume.index, test_predict_plot, label='Prediksi Testing TCN', color='red')
+                ax_forecast.plot(df.index, train_predict_plot, label='Prediksi Training TCN', color='blue')
+                ax_forecast.plot(df.index, test_predict_plot, label='Prediksi Testing TCN', color='red')
                 ax_forecast.set_title('Forecasting Volume dengan TCN')
                 ax_forecast.set_xlabel('Tanggal')
                 ax_forecast.set_ylabel('Volume')
@@ -224,18 +237,31 @@ if uploaded_file is not None:
                 # Pastikan residual dihitung dari data yang diprediksi dan aktual yang sesuai
                 # Untuk kesederhanaan, kita akan menghitung residual dari data test
                 residuals = y_test_actual.flatten() - test_predict.flatten()
-                residuals_df = pd.DataFrame(residuals, index=df_volume.index[test_predict_start_idx:test_predict_end_idx], columns=['Residual'])
+                
+                # Ensure the index for residuals_df is correctly aligned with the test predictions
+                # The actual data points corresponding to y_test_actual start at df.index[train_size + look_back]
+                # The length of residuals should match the length of test_predict (and y_test_actual)
+                if len(residuals) > 0 and (test_predict_start_idx + len(residuals)) <= len(df):
+                    residuals_df = pd.DataFrame(residuals, index=df.index[test_predict_start_idx : test_predict_start_idx + len(residuals)], columns=['Residual'])
+                else:
+                    st.warning("Tidak cukup data untuk menghitung residual atau indeks residual tidak sesuai. Melewatkan plotting residual.")
+                    residuals_df = pd.DataFrame(columns=['Residual']) # Create an empty DataFrame
+
 
                 st.subheader("Residual Model TCN")
-                fig_residuals, ax_residuals = plt.subplots(figsize=(12, 4))
-                ax_residuals.plot(residuals_df.index, residuals_df['Residual'], label='Residual', color='purple', alpha=0.7)
-                ax_residuals.axhline(0, color='gray', linestyle='--', linewidth=0.8)
-                ax_residuals.set_title('Residual Model TCN (Aktual - Prediksi)')
-                ax_residuals.set_xlabel('Tanggal')
-                ax_residuals.set_ylabel('Residual')
-                ax_residuals.legend()
-                ax_residuals.grid(True)
-                st.pyplot(fig_residuals)
+                if not residuals_df.empty:
+                    fig_residuals, ax_residuals = plt.subplots(figsize=(12, 4))
+                    ax_residuals.plot(residuals_df.index, residuals_df['Residual'], label='Residual', color='purple', alpha=0.7)
+                    ax_residuals.axhline(0, color='gray', linestyle='--', linewidth=0.8)
+                    ax_residuals.set_title('Residual Model TCN (Aktual - Prediksi)')
+                    ax_residuals.set_xlabel('Tanggal')
+                    ax_residuals.set_ylabel('Residual')
+                    ax_residuals.legend()
+                    ax_residuals.grid(True)
+                    st.pyplot(fig_residuals)
+                else:
+                    st.info("Tidak ada residual untuk ditampilkan.")
+
 
                 # Monitoring Residual dengan EWMA
                 st.subheader("Monitoring Residual dengan EWMA")
